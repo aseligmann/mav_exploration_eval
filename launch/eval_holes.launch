@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<launch>
+  <!-- Data source Data, -->
+  
+  <!-- <arg name="target_directory" default="/home/albert/project/exploration_comparison_data" /> -->
+  <arg name="target_directory" default="/home/albert/project/exploration_comparison_data/20210301_142820" />
+  <!-- /home/albert/project/exploration_comparison_data/20210301_142820/holes/meshes -->
+
+  <arg name="gt_file_path" default="/home/albert/project/exploration_comparison_data/ground_truth/ballast_tank_2x_no_top.ply"/>
+  
+	<node name="eval_holes_node" pkg="mav_exploration_eval" type="eval_holes" output="screen" >
+	  <param name="ground_truth_path" value="$(arg gt_file_path)" />
+    <param name="mapped_mesh_map" value="$(arg target_directory)/holes/meshes" />
+    <param name="output_mesh_map" value="$(arg target_directory)/holes" />
+    <param name="metric_holes_factor_scaling" value="1.0" /> <!-- TODO -->
+    <param name="metric_holes_factor_exp" value="1.0" /> <!-- TODO -->
+	</node>
+</launch>
