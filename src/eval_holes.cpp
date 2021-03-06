@@ -61,7 +61,11 @@
 #include <pcl/conversions.h>
 #include <pcl/filters/filter.h>
 #include <pcl/filters/voxel_grid.h>
+#include <pcl/filters/crop_hull.h>
 #include <pcl/surface/concave_hull.h>
+// #include <pcl/common/distances.h>
+#include <pcl/octree/octree.h>
+#include <pcl/segmentation/segment_differences.h>
 
 #include <pcl_conversions/pcl_conversions.h>
 
@@ -151,8 +155,10 @@ bool EvaluationNode::evaluateHoles() {
 
 
   if (method == "VTK_mesh") {
+    ROS_INFO("Using method: %s", method.c_str());
     return evalHolesVTK();
   } else if (method == "PCL_voxel") {
+    ROS_INFO("Using method: %s", method.c_str());
     return evalHolesPCL();
   } else {
     ROS_ERROR("Method not recognised. Use \"PCL_voxel\" or \"VTK_mesh\".");
@@ -392,7 +398,7 @@ bool EvaluationNode::evalHolesVTK() {
 
 
 
-bool EvaluationNode::evalHolesVTK() {
+bool EvaluationNode::evalHolesPCL() {
   // ************ Initialise ************ //
   // Load ground truth pointcloud
   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_gt(new pcl::PointCloud<pcl::PointXYZ>);
@@ -450,6 +456,24 @@ bool EvaluationNode::evalHolesVTK() {
   filter_ds.setLeafSize(voxel_resolution_, voxel_resolution_, voxel_resolution_);
   filter_ds.filter(*cloud_filtered);
 
+  ROS_INFO("Downsampling ground truth point cloud...");
+
+  // TODO: downsample to voxel grid
+  // pcl::octree::OctreePointCloudPointVector<pcl::PointXYZ> octree(voxel_resolution_);
+  // octree.setInputCloud(cloud_gt);
+  // octree.addPointsFromInputCloud();
+  // octree.getOccupiedVoxelCentersRecursive()
+  // for (voxel center) {
+  //   put point in new pointcloud
+  // }
+  
+
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_gt_filtered(new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::VoxelGrid<pcl::PointXYZ> filter_ds_gt;
+  filter_ds_gt.setInputCloud(cloud_gt);
+  filter_ds_gt.setLeafSize(voxel_resolution_, voxel_resolution_, voxel_resolution_);
+  filter_ds_gt.filter(*cloud_gt_filtered);
+
   // TODO: Filter noisy points
   // ROS_INFO("Filtering outliers...");
 
@@ -460,41 +484,83 @@ bool EvaluationNode::evalHolesVTK() {
   
   // ************ Concave hull ************ //
   ROS_INFO("Computing concave hull...");
-  // TODO: Compute concave hull
-  // pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_hull(new pcl::PointCloud<pcl::PointXYZ>);
-  // std::vector<pcl::Vertices> hull_polygons; 
-  // pcl::ConcaveHull<pcl::PointXYZ> concave_h;
-  // concave_h.setInputCloud(cloud_filtered);
-  // concave_h.setAlpha(1.2); // TODO: Set appropriate distance, Limits the size of the resultant hull segments (the smaller the more detailed the hull)
-  // concave_h.reconstruct(*cloud_hull, hull_polygons); 
+  // Compute concave hull
+  // https://pointclouds.org/documentation/classpcl_1_1_concave_hull.html
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_hull(new pcl::PointCloud<pcl::PointXYZ>);
+  std::vector<pcl::Vertices> hull_polygons; 
+  pcl::ConcaveHull<pcl::PointXYZ> concave_hull_filter;
+  concave_hull_filter.setInputCloud(cloud_filtered);
+  concave_hull_filter.setAlpha(max_hole_area_pcl_); // TODO: Set appropriate distance, Limits the size of the resultant hull segments (the smaller the more detailed the hull)
+  concave_hull_filter.reconstruct(*cloud_hull, hull_polygons); 
+  // cloud_hull contains the points on the boundary of the concave hull
+  // hull_polygons contains the hull indices
   
+  // Save pointcloud
+  ROS_INFO("Saving concave hull point cloud...");
+  pcl::io::savePLYFile(output_mesh_path_ + "/cloud_concave_hull.ply", *cloud_hull);
+
 
   // ************ Region of interest ************ //
-  ROS_INFO("Establishing region of interest...");
+  ROS_INFO("Establishing region of interest... (This might take a while.)");
   // Use concave hull to select Region of Interest from ground truth point cloud
+  // Crop everything but concave hull
+  // https://pointclouds.org/documentation/classpcl_1_1_crop_hull.html
+  pcl::CropHull<pcl::PointXYZ> crop_hull_filter;
+  crop_hull_filter.setHullIndices(hull_polygons);
+  crop_hull_filter.setHullCloud(cloud_hull);
+  crop_hull_filter.setInputCloud(cloud_gt_filtered);
+  crop_hull_filter.setDim(3);
+  crop_hull_filter.setCropOutside(true); // Keep points inside the hull
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_gt_hull(new pcl::PointCloud<pcl::PointXYZ>);
+  crop_hull_filter.filter(*cloud_gt_hull);
 
-  // Subtract mapped points from ground truth
+  // Save pointcloud
+  ROS_INFO("Saving concave hull extracted from ground truth point cloud...");
+  pcl::io::savePLYFile(output_mesh_path_ + "/cloud_concave_hull_gt.ply", *cloud_gt_hull);
+
+
+  // ************ Subtract mapped points from ground truth ************ //
   // Remaining points should be the holes
   ROS_INFO("Extracting holes...");
   
+  // Set maximum distance to classify points correspondence
+  double max_dist = sqrt(pow(voxel_resolution_, 2) + pow(voxel_resolution_, 2));
+
+  // Create k-d tree to search for nearest point
+  pcl::search::KdTree<pcl::PointXYZ>::Ptr kdtree (new pcl::search::KdTree<pcl::PointXYZ>); 
+  // Create filter for computing the difference between the two point clouds
+  // https://pointclouds.org/documentation/classpcl_1_1_segment_differences.html
+  pcl::SegmentDifferences<pcl::PointXYZ> difference_filter;
+  difference_filter.setInputCloud(cloud_gt_hull);
+  difference_filter.setTargetCloud(cloud_filtered);
+  difference_filter.setSearchMethod(kdtree);
+  difference_filter.setDistanceThreshold(max_dist);
+
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_holes(new pcl::PointCloud<pcl::PointXYZ>);
+  difference_filter.segment(*cloud_holes);
+
+  // Save pointcloud
+  ROS_INFO("Saving holes point cloud...");
+  pcl::io::savePLYFile(output_mesh_path_ + "/cloud_holes.ply", *cloud_holes);
 
   // ************ Area/volume ************ //
   // Compute area/volume of holes
   ROS_INFO("Computing size of holes...");
 
+  int n_hole_points = cloud_holes->points.size();
+  // TODO: get area from voxblox
+  double area = n_hole_points * pow(voxel_resolution_, 2);
+  double volume = n_hole_points * pow(voxel_resolution_, 3);
 
   // ************ Compute the metric ************ //
   ROS_INFO("Computing metric...");
-  // double metric = 0;
-  // double metric_simple = 0;
-  // for (int i = 0; i < areas.size(); ++i) {
-  //   metric += p_metric_holes_factor_scaling_ * exp(p_metric_holes_factor_exp_ * areas[i]);
-  //   metric_simple += areas[i];
-  // }
-  // ROS_INFO("  * Metric:        %16.6f", metric);
-  // ROS_INFO("  * Metric simple: %16.6f", metric_simple);
+  double metric = p_metric_holes_factor_scaling_ * exp(p_metric_holes_factor_exp_ * area);
+  double metric_simple = area;
+  ROS_INFO("  * Number of hole voxels: %d", n_hole_points);
+  ROS_INFO("  * Metric:        %16.6f", metric);
+  ROS_INFO("  * Metric simple: %16.6f", metric_simple);
 
-  // return true;
+  return true;
 }
 
 

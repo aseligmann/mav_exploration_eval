@@ -6,12 +6,20 @@
   <arg name="target_directory" default="/home/albert/project/exploration_comparison_data/20210301_142820" />
   <!-- /home/albert/project/exploration_comparison_data/20210301_142820/holes/meshes -->
 
-  <arg name="gt_file_path" default="/home/albert/project/exploration_comparison_data/ground_truth/ballast_tank_2x_no_top.ply"/>
+  <arg name="gt_file_path" default="/home/albert/project/exploration_comparison_data/ground_truth/ballast_tank_2x_cloud.ply"/>
   
 	<node name="eval_holes_node" pkg="mav_exploration_eval" type="eval_holes" output="screen" >
+    <!-- Ground truth point cloud must have a resolution equal to or finer than the mapped point cloud      -->
+    <!--   Can be generated from mesh using Poisson Disk sampling in e.g. MeshLab with a sampling radius    -->
+    <!--   of voxel_resolution / 2                                                                          -->
 	  <param name="ground_truth_path" value="$(arg gt_file_path)" />
     <param name="mapped_mesh_map" value="$(arg target_directory)/holes/meshes" />
     <param name="output_mesh_map" value="$(arg target_directory)/holes" />
+    <param name="method" value="PCL_voxel" />
+    <param name="voxel_resolution" value="0.1" />
+    <!-- <param name="max_hole_area_vtk" value="0.1" /> --> <!-- Currently unused -->
+    <param name="max_hole_area_pcl" value="1.0" /> <!-- Currently used for concave hull generation (alpha) -->
+
     <param name="metric_holes_factor_scaling" value="1.0" /> <!-- TODO -->
     <param name="metric_holes_factor_exp" value="1.0" /> <!-- TODO -->
 	</node>
