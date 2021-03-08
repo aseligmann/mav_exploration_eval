@@ -99,6 +99,8 @@ private:
   double voxel_resolution_;
   double max_hole_area_vtk_;
   double max_hole_area_pcl_;
+  double difference_max_dist_;
+  bool save_clouds_;
 
   // Ground truth pointcloud
   pcl::PointCloud<pcl::PointXYZRGB> gt_ptcloud_;
@@ -132,6 +134,8 @@ bool EvaluationNode::evaluateHoles() {
   double voxel_resolution;
   double max_hole_area_vtk;
   double max_hole_area_pcl;
+  double segment_max_dist;
+  bool save_clouds;
 
   nh_private_.getParam("ground_truth_path", gt_path);
   nh_private_.getParam("mapped_mesh_map", mapped_mesh_path);
@@ -142,6 +146,8 @@ bool EvaluationNode::evaluateHoles() {
   nh_private_.param("voxel_resolution", voxel_resolution, 0.1);
   nh_private_.param("max_hole_area_vtk", max_hole_area_vtk, 0.1);
   nh_private_.param("max_hole_area_pcl", max_hole_area_pcl, 0.1);
+  nh_private_.param("segment_max_dist", segment_max_dist, 0.141);
+  nh_private_.param("save_clouds", save_clouds, false);
 
   gt_path_ = gt_path;
   mapped_mesh_path_ = mapped_mesh_path;
@@ -152,6 +158,8 @@ bool EvaluationNode::evaluateHoles() {
   voxel_resolution_ = voxel_resolution;
   max_hole_area_vtk_ = max_hole_area_vtk;
   max_hole_area_pcl_ = max_hole_area_pcl;
+  difference_max_dist_ = segment_max_dist;
+  save_clouds_ = save_clouds;
 
 
   if (method == "VTK_mesh") {
@@ -230,12 +238,16 @@ bool EvaluationNode::evalHolesVTK() {
   cleanFilter->Update();
 
 
-  ROS_INFO("Saving combined mesh...");
   vtkNew<vtkPLYWriter> plyWriter;
-  std::string writer_path = output_mesh_path_ + "/cloud_mapped.ply";
-  plyWriter->SetFileName(writer_path.c_str());
-  plyWriter->SetInputConnection(cleanFilter->GetOutputPort());
-  plyWriter->Write();
+  std::string writer_path;
+  if (save_clouds_) {
+  ROS_INFO("Saving combined mesh...");
+    std::string writer_path = output_mesh_path_ + "/cloud_mapped.ply";
+    plyWriter->SetFileName(writer_path.c_str());
+    plyWriter->SetInputConnection(cleanFilter->GetOutputPort());
+    plyWriter->Write();
+  }
+
 
 
   // ************ Extract holes using VTK FillHolesFilter ************ //
@@ -371,10 +383,12 @@ bool EvaluationNode::evalHolesVTK() {
   ROS_INFO("  * Holes extracted: %d", n_holes);
 
   // Save hole mesh
-  writer_path = output_mesh_path_ + "/cloud_holes.ply";
-  plyWriter->SetFileName(writer_path.c_str());
-  plyWriter->SetInputData(holePolyData);
-  plyWriter->Write();
+  if (save_clouds_) {
+    writer_path = output_mesh_path_ + "/cloud_holes.ply";
+    plyWriter->SetFileName(writer_path.c_str());
+    plyWriter->SetInputData(holePolyData);
+    plyWriter->Write();
+  }
 
   pcl::PolygonMesh holePolygonMesh;
   pcl::VTKUtils::vtk2mesh(holePolyData, holePolygonMesh);
@@ -441,45 +455,49 @@ bool EvaluationNode::evalHolesPCL() {
   }
 
   // Save pointclouds
-  ROS_INFO("Saving ground truth point cloud...");
-  pcl::io::savePLYFile(output_mesh_path_ + "/cloud_gt.ply", *cloud_gt);
-  ROS_INFO("Saving mapped point clouds...");
-  pcl::io::savePLYFile(output_mesh_path_ + "/cloud_mapped.ply", *cloud_mapped);
+  if (save_clouds_) {
+    ROS_INFO("Saving ground truth point cloud...");
+    pcl::io::savePLYFile(output_mesh_path_ + "/cloud_gt.ply", *cloud_gt);
+    ROS_INFO("Saving mapped point clouds...");
+    pcl::io::savePLYFile(output_mesh_path_ + "/cloud_mapped.ply", *cloud_mapped);
+  }
   
 
   // ************ Filter ************ //
   ROS_INFO("Downsampling mapped point cloud...");
-  // Downsample to get rid of overlapping points
+  // Downsample to voxel grid
+  pcl::octree::OctreePointCloudPointVector<pcl::PointXYZ> octree(voxel_resolution_);
+  std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>> voxel_centers;
+  octree.setInputCloud(cloud_mapped);
+  octree.addPointsFromInputCloud();
+  octree.getOccupiedVoxelCenters(voxel_centers);
   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
-  pcl::VoxelGrid<pcl::PointXYZ> filter_ds;
-  filter_ds.setInputCloud(cloud_mapped);
-  filter_ds.setLeafSize(voxel_resolution_, voxel_resolution_, voxel_resolution_);
-  filter_ds.filter(*cloud_filtered);
+  for (auto it = voxel_centers.begin(); it != voxel_centers.end(); ++it) {
+    cloud_filtered->push_back(*it);
+  }
 
   ROS_INFO("Downsampling ground truth point cloud...");
 
-  // TODO: downsample to voxel grid
-  // pcl::octree::OctreePointCloudPointVector<pcl::PointXYZ> octree(voxel_resolution_);
-  // octree.setInputCloud(cloud_gt);
-  // octree.addPointsFromInputCloud();
-  // octree.getOccupiedVoxelCentersRecursive()
-  // for (voxel center) {
-  //   put point in new pointcloud
-  // }
-  
-
+  // Downsample to voxel grid
+  pcl::octree::OctreePointCloudPointVector<pcl::PointXYZ> octree_gt(voxel_resolution_);
+  std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>> voxel_centers_gt;
+  octree_gt.setInputCloud(cloud_gt);
+  octree_gt.addPointsFromInputCloud();
+  octree_gt.getOccupiedVoxelCenters(voxel_centers_gt);
   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_gt_filtered(new pcl::PointCloud<pcl::PointXYZ>);
-  pcl::VoxelGrid<pcl::PointXYZ> filter_ds_gt;
-  filter_ds_gt.setInputCloud(cloud_gt);
-  filter_ds_gt.setLeafSize(voxel_resolution_, voxel_resolution_, voxel_resolution_);
-  filter_ds_gt.filter(*cloud_gt_filtered);
+  for (auto it = voxel_centers_gt.begin(); it != voxel_centers_gt.end(); ++it) {
+    cloud_gt_filtered->push_back(*it);
+  }
 
   // TODO: Filter noisy points
   // ROS_INFO("Filtering outliers...");
 
   // Save pointcloud
-  ROS_INFO("Saving filtered point clouds...");
-  pcl::io::savePLYFile(output_mesh_path_ + "/cloud_filtered.ply", *cloud_filtered);
+  if (save_clouds_) {
+    ROS_INFO("Saving filtered point clouds...");
+    pcl::io::savePLYFile(output_mesh_path_ + "/cloud_filtered.ply", *cloud_filtered);
+    pcl::io::savePLYFile(output_mesh_path_ + "/cloud_gt_filtered.ply", *cloud_gt_filtered);
+  }
 
   
   // ************ Concave hull ************ //
@@ -496,8 +514,10 @@ bool EvaluationNode::evalHolesPCL() {
   // hull_polygons contains the hull indices
   
   // Save pointcloud
-  ROS_INFO("Saving concave hull point cloud...");
-  pcl::io::savePLYFile(output_mesh_path_ + "/cloud_concave_hull.ply", *cloud_hull);
+  if (save_clouds_) {
+    ROS_INFO("Saving concave hull point cloud...");
+    pcl::io::savePLYFile(output_mesh_path_ + "/cloud_concave_hull.ply", *cloud_hull);
+  }
 
 
   // ************ Region of interest ************ //
@@ -515,8 +535,10 @@ bool EvaluationNode::evalHolesPCL() {
   crop_hull_filter.filter(*cloud_gt_hull);
 
   // Save pointcloud
-  ROS_INFO("Saving concave hull extracted from ground truth point cloud...");
-  pcl::io::savePLYFile(output_mesh_path_ + "/cloud_concave_hull_gt.ply", *cloud_gt_hull);
+  if (save_clouds_) {
+    ROS_INFO("Saving concave hull extracted from ground truth point cloud...");
+    pcl::io::savePLYFile(output_mesh_path_ + "/cloud_concave_hull_gt.ply", *cloud_gt_hull);
+  }
 
 
   // ************ Subtract mapped points from ground truth ************ //
@@ -524,7 +546,7 @@ bool EvaluationNode::evalHolesPCL() {
   ROS_INFO("Extracting holes...");
   
   // Set maximum distance to classify points correspondence
-  double max_dist = sqrt(pow(voxel_resolution_, 2) + pow(voxel_resolution_, 2));
+  double max_dist = difference_max_dist_;//sqrt(pow(voxel_resolution_, 2) + pow(voxel_resolution_, 2));
 
   // Create k-d tree to search for nearest point
   pcl::search::KdTree<pcl::PointXYZ>::Ptr kdtree (new pcl::search::KdTree<pcl::PointXYZ>); 
@@ -540,8 +562,10 @@ bool EvaluationNode::evalHolesPCL() {
   difference_filter.segment(*cloud_holes);
 
   // Save pointcloud
-  ROS_INFO("Saving holes point cloud...");
-  pcl::io::savePLYFile(output_mesh_path_ + "/cloud_holes.ply", *cloud_holes);
+  if (save_clouds_) {
+    ROS_INFO("Saving holes point cloud...");
+    pcl::io::savePLYFile(output_mesh_path_ + "/cloud_holes.ply", *cloud_holes);
+  }
 
   // ************ Area/volume ************ //
   // Compute area/volume of holes

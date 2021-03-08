@@ -18,9 +18,12 @@
     <param name="method" value="PCL_voxel" />
     <param name="voxel_resolution" value="0.1" />
     <!-- <param name="max_hole_area_vtk" value="0.1" /> --> <!-- Currently unused -->
-    <param name="max_hole_area_pcl" value="1.0" /> <!-- Currently used for concave hull generation (alpha) -->
+    <param name="max_hole_area_pcl" value="10.0" /> <!-- Currently used for concave hull generation (alpha) -->
+    <param name="segment_max_dist" value="0.05" /> <!-- Distance threshold for SegmentDifferences -->
 
     <param name="metric_holes_factor_scaling" value="1.0" /> <!-- TODO -->
     <param name="metric_holes_factor_exp" value="1.0" /> <!-- TODO -->
+
+    <param name="save_clouds" value="true" /> <!-- TODO -->
 	</node>
 </launch>
