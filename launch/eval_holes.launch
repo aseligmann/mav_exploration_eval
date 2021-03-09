@@ -24,6 +24,6 @@
     <param name="metric_holes_factor_scaling" value="1.0" /> <!-- TODO -->
     <param name="metric_holes_factor_exp" value="1.0" /> <!-- TODO -->
 
-    <param name="save_clouds" value="true" /> <!-- TODO -->
+    <param name="save_clouds" value="true" />
 	</node>
 </launch>

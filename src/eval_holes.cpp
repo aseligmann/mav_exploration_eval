@@ -532,6 +532,7 @@ bool EvaluationNode::evalHolesPCL() {
   crop_hull_filter.setDim(3);
   crop_hull_filter.setCropOutside(true); // Keep points inside the hull
   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_gt_hull(new pcl::PointCloud<pcl::PointXYZ>);
+  // TODO: Figure out why this produces a "spotty" output
   crop_hull_filter.filter(*cloud_gt_hull);
 
   // Save pointcloud
