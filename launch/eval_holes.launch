@@ -3,27 +3,37 @@
   <!-- Data source Data, -->
   
   <!-- <arg name="target_directory" default="/home/albert/project/exploration_comparison_data" /> -->
-  <arg name="target_directory" default="/home/albert/project/exploration_comparison_data/20210301_142820" />
+  <!-- <arg name="target_directory" default="/home/albert/project/exploration_comparison_data/20210301_142820" /> -->
+  <arg name="target_directory" default="/home/albert/project/thesis/repos/exploration_comparison_data/gbplanner/20210619_173321 (copy)" />
   <!-- /home/albert/project/exploration_comparison_data/20210301_142820/holes/meshes -->
 
-  <arg name="gt_file_path" default="/home/albert/project/exploration_comparison_data/ground_truth/ballast_tank_2x_cloud.ply"/>
+  <!-- <arg name="ground_truth_path" default="/home/albert/project/exploration_comparison_data/ground_truth/ballast_tank_2x_cloud.ply"/> -->
+  <arg name="ground_truth_path" default="/home/albert/project/thesis/repos/exploration_comparison_data/ground_truth/ballast_tank_2x_cloud.ply"/>
+  <arg name="mapped_mesh_map" default="$(arg target_directory)/meshes" />
+  <arg name="result_file_name" default="result" />
+  <arg name="voxel_resolution" default="0.1" />
+  <arg name="method" default="PCL_voxel" />
+  <arg name="max_hole_area_pcl" default="10.0" /> <!-- Currently used for concave hull generation (alpha) -->
+  <arg name="segment_max_dist" default="0.05" /> <!-- Distance threshold for SegmentDifferences -->
+  <arg name="save_clouds" default="true" />
   
-	<node name="eval_holes_node" pkg="mav_exploration_eval" type="eval_holes" output="screen" >
+	<node name="eval_holes_node" pkg="mav_exploration_eval" type="eval_holes" output="screen" required="true" >
     <!-- Ground truth point cloud must have a resolution equal to or finer than the mapped point cloud      -->
     <!--   Can be generated from mesh using Poisson Disk sampling in e.g. MeshLab with a sampling radius    -->
     <!--   of voxel_resolution / 2                                                                          -->
-	  <param name="ground_truth_path" value="$(arg gt_file_path)" />
-    <param name="mapped_mesh_map" value="$(arg target_directory)/holes/meshes" />
-    <param name="output_mesh_map" value="$(arg target_directory)/holes" />
-    <param name="method" value="PCL_voxel" />
-    <param name="voxel_resolution" value="0.1" />
+	  <param name="result_file_name" value="$(arg result_file_name)" />
+	  <param name="ground_truth_path" value="$(arg ground_truth_path)" />
+    <param name="mapped_mesh_map" value="$(arg mapped_mesh_map)" />
+    <param name="output_mesh_map" value="$(arg target_directory)" />
+    <param name="method" value="$(arg method)" />
+    <param name="voxel_resolution" value="$(arg voxel_resolution)" />
     <!-- <param name="max_hole_area_vtk" value="0.1" /> --> <!-- Currently unused -->
-    <param name="max_hole_area_pcl" value="10.0" /> <!-- Currently used for concave hull generation (alpha) -->
-    <param name="segment_max_dist" value="0.05" /> <!-- Distance threshold for SegmentDifferences -->
+    <param name="max_hole_area_pcl" value="$(arg max_hole_area_pcl)" /> <!-- Currently used for concave hull generation (alpha) -->
+    <param name="segment_max_dist" value="$(arg segment_max_dist)" /> <!-- Distance threshold for SegmentDifferences -->
 
     <param name="metric_holes_factor_scaling" value="1.0" /> <!-- TODO -->
     <param name="metric_holes_factor_exp" value="1.0" /> <!-- TODO -->
 
-    <param name="save_clouds" value="true" />
+    <param name="save_clouds" value="$(arg save_clouds)" />
 	</node>
 </launch>

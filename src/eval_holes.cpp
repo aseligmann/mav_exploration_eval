@@ -9,6 +9,7 @@
 #include <sstream>
 #include <stdio.h>
 #include <string>
+#include <chrono>
 
 // #include <voxblox/core/esdf_map.h>
 // #include <voxblox/core/occupancy_map.h>
@@ -90,6 +91,7 @@ public:
 private:
   ros::NodeHandle nh_;
   ros::NodeHandle nh_private_;
+  std::string res_file_name_;
   std::string gt_path_;
   std::string mapped_mesh_path_;
   std::string output_mesh_path_;
@@ -118,6 +120,7 @@ EvaluationNode::EvaluationNode(const ros::NodeHandle& nh, const ros::NodeHandle&
   }
   ROS_INFO("Shutting down.");
   nh_private_.shutdown();
+  ros::shutdown();
 }
 
 
@@ -125,6 +128,7 @@ EvaluationNode::EvaluationNode(const ros::NodeHandle& nh, const ros::NodeHandle&
 bool EvaluationNode::evaluateHoles() {
   // ************ Initialize ************ //
   ROS_INFO("Loading parameters...");
+  std::string res_file_name;
   std::string gt_path;
   std::string mapped_mesh_path;
   std::string output_mesh_path;
@@ -137,6 +141,7 @@ bool EvaluationNode::evaluateHoles() {
   double segment_max_dist;
   bool save_clouds;
 
+  nh_private_.getParam("result_file_name", res_file_name);
   nh_private_.getParam("ground_truth_path", gt_path);
   nh_private_.getParam("mapped_mesh_map", mapped_mesh_path);
   nh_private_.getParam("output_mesh_map", output_mesh_path);
@@ -149,6 +154,7 @@ bool EvaluationNode::evaluateHoles() {
   nh_private_.param("segment_max_dist", segment_max_dist, 0.141);
   nh_private_.param("save_clouds", save_clouds, false);
 
+  res_file_name_ = res_file_name;
   gt_path_ = gt_path;
   mapped_mesh_path_ = mapped_mesh_path;
   output_mesh_path_ = output_mesh_path;
@@ -415,6 +421,7 @@ bool EvaluationNode::evalHolesVTK() {
 bool EvaluationNode::evalHolesPCL() {
   // ************ Initialise ************ //
   // Load ground truth pointcloud
+  auto exec_timer_start = std::chrono::high_resolution_clock::now();
   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_gt(new pcl::PointCloud<pcl::PointXYZ>);
   pcl::PCLPointCloud2 cloud_gt_blob;
   ROS_INFO("Loading ground truth point cloud...");
@@ -430,6 +437,15 @@ bool EvaluationNode::evalHolesPCL() {
     ROS_ERROR("  * Directory does not exist!");
     return false;
   }
+
+  // Initialise result file
+  boost::filesystem::path result_file_path(output_mesh_path_);
+  // result_file_path.branch_path();
+  boost::filesystem::ofstream result_file(result_file_path.string() + std::string("/") + res_file_name_ + std::string(".txt"));
+  std::string header_string;
+  header_string = "Latent_volume: " + output_mesh_path_ + "\n";
+  result_file.write(header_string.c_str(), header_string.size());
+
   // Iterate over files
   int n_clouds = 0;
   boost::filesystem::directory_iterator end_itr;  // Default constructor constructs an end iterator object
@@ -449,6 +465,7 @@ bool EvaluationNode::evalHolesPCL() {
   }
   if (n_clouds <= 0) {
     ROS_ERROR("  * Directory does not contain any .ply files!");
+    result_file.close();
     return false;
   } else {
     ROS_INFO("  * Meshes loaded:  %d", n_clouds);
@@ -579,11 +596,48 @@ bool EvaluationNode::evalHolesPCL() {
 
   // ************ Compute the metric ************ //
   ROS_INFO("Computing metric...");
-  double metric = p_metric_holes_factor_scaling_ * exp(p_metric_holes_factor_exp_ * area);
-  double metric_simple = area;
-  ROS_INFO("  * Number of hole voxels: %d", n_hole_points);
-  ROS_INFO("  * Metric:        %16.6f", metric);
-  ROS_INFO("  * Metric simple: %16.6f", metric_simple);
+  double metric = p_metric_holes_factor_scaling_ * exp(p_metric_holes_factor_exp_ * volume);
+  double metric_simple = volume;
+  ROS_INFO("  * Voxel resolution: %f", voxel_resolution_);
+  ROS_INFO("  * Number of latent voxels: %d", n_hole_points);
+  // ROS_INFO("  * Metric:        %16.6f", metric);
+  // ROS_INFO("  * Metric simple: %16.6f", metric_simple);
+  ROS_INFO("  * Volume: %d", volume);
+
+  auto exec_timer_end = std::chrono::high_resolution_clock::now();
+  auto exec_time = exec_timer_end - exec_timer_start;
+
+  std::chrono::duration<double, std::milli> ms_double = exec_time;
+  std::string out_divide_settings = std::string("--- Settings ----------------------------------------------") + std::string("\n");
+  std::string out_mapped_path = std::string("Mapped mesh path: ") + mapped_mesh_path_ + std::string("\n");
+  std::string out_gt_path = std::string("Ground truth path: ") + gt_path_ + std::string("\n");
+  std::string out_method = std::string("Method: ") + method_ + std::string("\n");
+  std::string out_voxel_res = std::string("Voxel resolution: ") + std::to_string(voxel_resolution_) + std::string("\n");
+  std::string out_alpha = std::string("Alpha: ") + std::to_string(max_hole_area_pcl_) + std::string("\n");
+  std::string out_max_dist = std::string("Distance threshold: ") + std::to_string(max_dist) + std::string("\n");
+  std::string out_divide_results = std::string("--- Results ----------------------------------------------") + std::string("\n");
+  // std::string out_metric_scaling = std::string("Metric scaling factor: ") + std::to_string(p_metric_holes_factor_scaling_) + std::string("\n");
+  // std::string out_metric_exp = std::string("Metric exp factor: ") + std::to_string(p_metric_holes_factor_exp_) + std::string("\n");
+  std::string out_num_voxel = std::string("Number of latent voxels: ") + std::to_string(n_hole_points) + std::string("\n");
+  std::string out_volume = std::string("Latent volume: ") + std::to_string(volume) + std::string("\n");
+  // std::string out_metric = std::string("Metric: ") + std::to_string(metric) + std::string("\n");
+  std::string out_timing = std::string("Time taken [ms]: ") + std::to_string(ms_double.count()) + std::string("\n");
+
+  result_file.write(out_divide_settings.c_str(), out_divide_settings.size());
+  result_file.write(out_mapped_path.c_str(), out_mapped_path.size());
+  result_file.write(out_gt_path.c_str(), out_gt_path.size());
+  result_file.write(out_method.c_str(), out_method.size());
+  result_file.write(out_voxel_res.c_str(), out_voxel_res.size());
+  result_file.write(out_alpha.c_str(), out_alpha.size());
+  result_file.write(out_max_dist.c_str(), out_max_dist.size());
+  result_file.write(out_divide_results.c_str(), out_divide_results.size());
+  // result_file.write(out_metric_scaling.c_str(), out_metric_scaling.size());
+  // result_file.write(out_metric_exp.c_str(), out_metric_exp.size());
+  result_file.write(out_num_voxel.c_str(), out_num_voxel.size());
+  result_file.write(out_volume.c_str(), out_volume.size());
+  // result_file.write(out_metric.c_str(), out_metric.size());
+  result_file.write(out_timing.c_str(), out_timing.size());
+  result_file.close();
 
   return true;
 }
@@ -601,6 +655,6 @@ int main(int argc, char** argv) {
   ros::NodeHandle nh_private("~");
 
   mav_exploration_eval::EvaluationNode eval(nh, nh_private);
-  ros::spin();
+  // ros::spin();
   return 0;
 }
