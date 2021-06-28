@@ -618,7 +618,9 @@ bool EvaluationNode::evalHolesPCL() {
   std::string out_divide_results = std::string("--- Results ----------------------------------------------") + std::string("\n");
   // std::string out_metric_scaling = std::string("Metric scaling factor: ") + std::to_string(p_metric_holes_factor_scaling_) + std::string("\n");
   // std::string out_metric_exp = std::string("Metric exp factor: ") + std::to_string(p_metric_holes_factor_exp_) + std::string("\n");
-  std::string out_num_voxel = std::string("Number of latent voxels: ") + std::to_string(n_hole_points) + std::string("\n");
+  std::string out_num_total1_voxel = std::string("Number of total voxels (size): ") + std::to_string(cloud_gt_filtered->size()) + std::string("\n");
+  std::string out_num_total2_voxel = std::string("Number of total voxels (points.size): ") + std::to_string(cloud_gt_filtered->points.size()) + std::string("\n");
+  std::string out_num_latent_voxel = std::string("Number of latent voxels: ") + std::to_string(n_hole_points) + std::string("\n");
   std::string out_volume = std::string("Latent volume: ") + std::to_string(volume) + std::string("\n");
   // std::string out_metric = std::string("Metric: ") + std::to_string(metric) + std::string("\n");
   std::string out_timing = std::string("Time taken [ms]: ") + std::to_string(ms_double.count()) + std::string("\n");
@@ -633,7 +635,9 @@ bool EvaluationNode::evalHolesPCL() {
   result_file.write(out_divide_results.c_str(), out_divide_results.size());
   // result_file.write(out_metric_scaling.c_str(), out_metric_scaling.size());
   // result_file.write(out_metric_exp.c_str(), out_metric_exp.size());
-  result_file.write(out_num_voxel.c_str(), out_num_voxel.size());
+  result_file.write(out_num_total1_voxel.c_str(), out_num_total1_voxel.size());
+  result_file.write(out_num_total2_voxel.c_str(), out_num_total2_voxel.size());
+  result_file.write(out_num_latent_voxel.c_str(), out_num_latent_voxel.size());
   result_file.write(out_volume.c_str(), out_volume.size());
   // result_file.write(out_metric.c_str(), out_metric.size());
   result_file.write(out_timing.c_str(), out_timing.size());
